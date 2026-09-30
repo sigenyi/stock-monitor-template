@@ -1,0 +1,87 @@
+# Filings watcher: hourly on weekdays, check SEC EDGAR for new filings by the
+# company in filings/filings_config.json, email a notification for each one
+# (plus an LLM-extracted review draft for earnings releases and periodic
+# reports when extraction is enabled), then commit filings/state.json and
+# filings/history.json back to the repo.
+#
+# Opt-in: the schedule does nothing until the repository variable
+# ENABLE_FILINGS_WATCHER is set to "true" (Settings > Secrets and variables >
+# Actions > Variables). Manual "Run workflow" runs always work, for testing.
+name: filings-watcher
+
+on:
+  schedule:
+    - cron: "0 * * * 1-5"     # hourly on weekdays; one cheap request when quiet
+  workflow_dispatch:
+    inputs:
+      force_accession:
+        description: >-
+          Optional: an accession number (with or without dashes) to
+          re-classify and re-extract even if already seen (for testing).
+        required: false
+        default: ""
+
+permissions: {}
+
+concurrency:
+  group: filings              # serialize runs so state commits never race
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    # Opt-in: template copies and forks start inert. Scheduled runs only
+    # proceed once the repository variable ENABLE_FILINGS_WATCHER is "true";
+    # manual runs (workflow_dispatch) are always allowed so you can test the
+    # setup before turning the schedule on.
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.ENABLE_FILINGS_WATCHER == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write         # required to commit state.json / history.json back
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run filings watcher
+        id: watcher
+        timeout-minutes: 25
+        env:
+          SEC_CONTACT_EMAIL: ${{ secrets.SEC_CONTACT_EMAIL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+          EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          # Optional: non-Gmail SMTP provider (empty = Gmail defaults).
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          # Passed via env (never interpolated into `run:`) so the input
+          # cannot inject shell commands.
+          FORCE_ACCESSION: ${{ inputs.force_accession }}
+        run: python -m filings.watcher
+
+      - name: Commit state changes back to the repo
+        if: ${{ always() && steps.watcher.outcome != 'skipped' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add filings/state.json filings/history.json
+          if git diff --staged --quiet; then echo "No state changes to commit."; exit 0; fi
+          git commit -m "chore(filings): update state/history [skip ci]"
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          for attempt in 1 2 3; do
+            if git pull --rebase "$remote" "$GITHUB_REF_NAME" && git push "$remote" "HEAD:$GITHUB_REF_NAME"; then exit 0; fi
+            sleep $((attempt * 10))
+          done
+          echo "::error::Could not push state after 3 attempts"; exit 1

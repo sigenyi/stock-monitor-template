@@ -1,0 +1,60 @@
+# Price alerts: twice per US trading day, fetch Finnhub quotes for the tickers
+# in price_alerts/config.json and send one consolidated email if any trigger
+# fired. Stateless: nothing is committed back to the repo.
+#
+# Opt-in: the schedule does nothing until the repository variable
+# ENABLE_PRICE_ALERTS is set to "true" (Settings > Secrets and variables >
+# Actions > Variables). Manual "Run workflow" runs always work, for testing.
+name: price-alerts
+
+on:
+  schedule:
+    # GitHub cron is UTC and does NOT track US daylight saving. Four entries
+    # straddle both seasons; the script reads which cron fired (SCHEDULE),
+    # proceeds only for the correct-season one within its ET window
+    # (10:45-11:15 and 16:05-16:15 ET, with capped grace) and exits cleanly
+    # on the wrong-season fires.
+    - cron: "45 14 * * 1-5"   # 10:45 ET during EDT (summer)
+    - cron: "45 15 * * 1-5"   # 10:45 ET during EST (winter)
+    - cron: "5 20 * * 1-5"    # 16:05 ET during EDT (summer)
+    - cron: "5 21 * * 1-5"    # 16:05 ET during EST (winter)
+  workflow_dispatch: {}       # manual runs bypass the time gate
+
+permissions:
+  contents: read
+
+jobs:
+  alerts:
+    # Opt-in: template copies and forks start inert. Scheduled runs only
+    # proceed once the repository variable ENABLE_PRICE_ALERTS is "true";
+    # manual runs (workflow_dispatch) are always allowed so you can test the
+    # setup before turning the schedule on.
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.ENABLE_PRICE_ALERTS == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run price alerts
+        env:
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+          EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          # Optional: non-Gmail SMTP provider (empty = Gmail defaults).
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          # The cron expression that triggered this run (empty for manual
+          # runs); used by the script's daylight-saving-aware time gate.
+          SCHEDULE: ${{ github.event.schedule }}
+        run: python -m price_alerts.alerts

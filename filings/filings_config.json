@@ -1,0 +1,23 @@
+{
+  "_about": "Example configuration: watches Omnicom Group (OMC). To watch a different company, change `company`, review `profile` and `thresholds`, and see README > Watch a different company.",
+  "company": { "name": "Omnicom Group", "ticker": "OMC", "cik": "0000029989", "fiscal_year_end": "12-31" },
+  "watched_forms": ["8-K", "8-K/A", "10-Q", "10-K", "10-Q/A", "10-K/A"],
+  "user_agent_tool_name": "StockMonitor",
+  "extraction": { "enabled": true, "model": "claude-sonnet-4-6", "max_tokens": 4000, "temperature": 0 },
+  "profile": {
+    "core_label": "Core Operations",
+    "margin_label": "adjusted EBITA margin",
+    "perimeter_section_hint": "Definitions — Components of Revenue Change",
+    "segment": { "name": "Integrated Media", "plain_name": "Media buying", "share_of_core_pct": 51.5 },
+    "guidance_reference_phrases": ["4% organic", "$900M synergies in 2026"],
+    "goodwill_test_date": "06-30",
+    "extra_anchor_phrases": ["Components of Revenue Change", "Definitions"],
+    "plain_overrides": {}
+  },
+  "thresholds": {
+    "buyback_red_floor_qtr_m": 700,
+    "leverage_red_x": 3.0,
+    "margin_yellow_pct": 15.0,
+    "subtraction_growth_escalate_at": 4
+  }
+}

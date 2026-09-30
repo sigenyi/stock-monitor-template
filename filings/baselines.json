@@ -1,0 +1,8 @@
+{
+  "_about": "Optional reference values for the example company (OMC), from its filings as of 2026-07-24. Every key is optional; {} is valid.",
+  "baseline_asof": "2026-07-24",
+  "organic_growth_history": [ { "quarter": "2026-Q1", "organic_core_pct": 3.9 } ],
+  "shares_outstanding_m": 285.01,
+  "buyback": { "authorization_remaining_b": 5.0, "run_rate_qtr_m": 875 },
+  "time_stop": { "review_after": null, "note": null }
+}
